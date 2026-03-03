@@ -1,9 +1,8 @@
 """
 每日汇率采集脚本
-数据源：
-  中间价 - 中国外汇交易中心 CcprHisNew API
-  在岸CNY - Investing.com 历史数据表格收盘价（主） / Yahoo Finance（备）
-  离岸CNH - Investing.com 历史数据表格收盘价（主） / Yahoo Finance（备）
+采集完成后：
+  1. 保存到 data/latest.json（备份）
+  2. POST 到飞书工作流 Webhook（自动写入多维表格）
 """
 
 import requests
@@ -29,6 +28,9 @@ HEADERS_COMMON = {
 
 CN_TZ = timezone(timedelta(hours=8))
 
+# 飞书 Webhook 地址（从环境变量读取）
+FEISHU_WEBHOOK_URL = os.environ.get("FEISHU_WEBHOOK_URL", "")
+
 
 def today_str():
     return datetime.now(CN_TZ).strftime("%Y-%m-%d")
@@ -47,10 +49,6 @@ def validate_rate(rate):
 # ============================================================
 
 def fetch_mid_rate():
-    """
-    API 地址：CcprHisNew
-    返回格式：records[0].values[0] = "6.9088"
-    """
     print("[中间价] 正在从外汇交易中心获取...")
     errors = []
     date = today_str()
@@ -88,17 +86,13 @@ def fetch_mid_rate():
 
 
 # ============================================================
-#  数据源2：Investing.com - 历史数据表格收盘价
+#  数据源2：Investing.com
 # ============================================================
 
 def fetch_investing(pair_type):
-    """
-    从 Investing.com 历史数据页面获取表格第一行的收盘价
-    表头顺序：日期 | 收盘 | 开盘 | 高 | 低 | 交易量 | 涨跌幅
-    """
     label = "在岸CNY" if pair_type == "cny" else "离岸CNH"
     slug = "usd-cny" if pair_type == "cny" else "usd-cnh"
-    print(f"[{label}] 正在从 Investing.com 历史数据获取...")
+    print(f"[{label}] 正在从 Investing.com 获取...")
 
     try:
         url = f"https://cn.investing.com/currencies/{slug}-historical-data"
@@ -114,7 +108,6 @@ def fetch_investing(pair_type):
 
         soup = BeautifulSoup(resp.text, "lxml")
 
-        # 策略1：查找包含「收盘」或「日期」的表格
         target_table = None
         tables = soup.find_all("table")
         for table in tables:
@@ -126,7 +119,6 @@ def fetch_investing(pair_type):
 
         if target_table:
             rows = target_table.find_all("tr")
-            # 跳过表头，取第一行数据（最新日期）
             for row in rows[1:]:
                 cells = row.find_all("td")
                 if len(cells) >= 2:
@@ -135,12 +127,11 @@ def fetch_investing(pair_type):
                     try:
                         rate = float(close_text)
                         if validate_rate(rate):
-                            print(f"[{label}] ✅ Investing表格获取成功: {rate} (日期:{date_text})")
+                            print(f"[{label}] ✅ Investing获取成功: {rate} (日期:{date_text})")
                             return rate, f"Investing.com({date_text})", None
                     except ValueError:
                         continue
 
-        # 策略2：查找带有 data-test 属性的表格（Investing 新版页面）
         table2 = soup.find("table", attrs={"data-test": True})
         if table2:
             rows = table2.find_all("tr")
@@ -152,23 +143,19 @@ def fetch_investing(pair_type):
                     try:
                         rate = float(close_text)
                         if validate_rate(rate):
-                            print(f"[{label}] ✅ Investing表格(v2)获取成功: {rate} (日期:{date_text})")
+                            print(f"[{label}] ✅ Investing(v2)获取成功: {rate}")
                             return rate, f"Investing.com({date_text})", None
                     except ValueError:
                         continue
 
-        # 策略3：遍历所有表格，找第一个包含合理汇率数据的
         for table in tables:
             rows = table.find_all("tr")
             if len(rows) < 2:
                 continue
-            # 检查表头是否像历史数据表
             header_cells = rows[0].find_all(["th", "td"])
-            header_texts = [c.get_text(strip=True) for c in header_cells]
-            header_joined = " ".join(header_texts)
+            header_joined = " ".join([c.get_text(strip=True) for c in header_cells])
             if "日期" not in header_joined and "Date" not in header_joined:
                 continue
-            # 取第一行数据
             data_cells = rows[1].find_all("td")
             if len(data_cells) >= 2:
                 date_text = data_cells[0].get_text(strip=True)
@@ -176,7 +163,7 @@ def fetch_investing(pair_type):
                 try:
                     rate = float(close_text)
                     if validate_rate(rate):
-                        print(f"[{label}] ✅ Investing表格(v3)获取成功: {rate} (日期:{date_text})")
+                        print(f"[{label}] ✅ Investing(v3)获取成功: {rate}")
                         return rate, f"Investing.com({date_text})", None
                 except ValueError:
                     continue
@@ -192,7 +179,6 @@ def fetch_investing(pair_type):
 # ============================================================
 
 def fetch_yahoo(pair_type):
-    """从 Yahoo Finance 获取最近收盘价（备用源）"""
     label = "在岸CNY" if pair_type == "cny" else "离岸CNH"
     ticker = "CNY=X" if pair_type == "cny" else "CNH=X"
     print(f"[{label}] 正在从 Yahoo Finance 备用源获取...")
@@ -204,10 +190,8 @@ def fetch_yahoo(pair_type):
         if hist.empty:
             return None, None, "Yahoo Finance返回空数据"
 
-        # 取最后一行（最新收盘）
-        last_row = hist.iloc[-1]
         last_date = str(hist.index[-1].date())
-        rate = round(float(last_row["Close"]), 4)
+        rate = round(float(hist.iloc[-1]["Close"]), 4)
 
         if validate_rate(rate):
             print(f"[{label}] ✅ Yahoo获取成功: {rate} (日期:{last_date})")
@@ -249,7 +233,7 @@ def collect_all():
     if error:
         all_errors.append(error)
 
-    # 2. 在岸 CNY（主源 Investing → 备用 Yahoo）
+    # 2. 在岸 CNY
     rate, source, error = fetch_investing("cny")
     if rate is not None:
         result["onshore_cny"] = rate
@@ -263,7 +247,7 @@ def collect_all():
         if error:
             all_errors.append(f"在岸CNY: {investing_error} -> {error}")
 
-    # 3. 离岸 CNH（主源 Investing → 备用 Yahoo）
+    # 3. 离岸 CNH
     rate, source, error = fetch_investing("cnh")
     if rate is not None:
         result["offshore_cnh"] = rate
@@ -277,7 +261,6 @@ def collect_all():
         if error:
             all_errors.append(f"离岸CNH: {investing_error} -> {error}")
 
-    # 汇总错误
     result["errors"] = " | ".join(all_errors) if all_errors else ""
 
     print("=" * 60)
@@ -294,18 +277,17 @@ def collect_all():
 
 
 def save_result(result):
+    """保存到文件备份"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(script_dir)
     data_dir = os.path.join(repo_root, "data")
     os.makedirs(data_dir, exist_ok=True)
 
-    # 写入 latest.json
     filepath = os.path.join(data_dir, "latest.json")
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     print(f"结果已保存到 {filepath}")
 
-    # 追加到 history.csv
     csv_path = os.path.join(data_dir, "history.csv")
     file_exists = os.path.exists(csv_path)
     with open(csv_path, "a", encoding="utf-8") as f:
@@ -325,6 +307,63 @@ def save_result(result):
     print(f"历史记录已追加到 {csv_path}")
 
 
+def post_to_feishu(result):
+    """POST 数据到飞书工作流 Webhook"""
+    if not FEISHU_WEBHOOK_URL:
+        print("⚠️ 未配置 FEISHU_WEBHOOK_URL，跳过飞书推送")
+        return
+
+    # 组装来源文本
+    source_parts = []
+    if result["source_mid"]:
+        source_parts.append("中间价:" + result["source_mid"])
+    if result["source_cny"]:
+        source_parts.append("CNY:" + result["source_cny"])
+    if result["source_cnh"]:
+        source_parts.append("CNH:" + result["source_cnh"])
+    source_text = " ".join(source_parts)
+
+    # 组装备注
+    remark_parts = []
+    if result["mid_rate"] is None:
+        remark_parts.append("⚠️中间价获取失败")
+    if result["onshore_cny"] is None:
+        remark_parts.append("⚠️在岸CNY获取失败")
+    if result["offshore_cnh"] is None:
+        remark_parts.append("⚠️离岸CNH获取失败")
+    if result["errors"]:
+        remark_parts.append(result["errors"])
+    remark_text = " ".join(remark_parts)
+
+    payload = {
+        "date": result["date"],
+        "mid_rate": result["mid_rate"] if result["mid_rate"] is not None else 0,
+        "onshore_cny": result["onshore_cny"] if result["onshore_cny"] is not None else 0,
+        "offshore_cnh": result["offshore_cnh"] if result["offshore_cnh"] is not None else 0,
+        "source_text": source_text,
+        "remark_text": remark_text,
+    }
+
+    print(f"正在推送到飞书 Webhook...")
+    print(f"  payload: {json.dumps(payload, ensure_ascii=False)}")
+
+    try:
+        resp = requests.post(
+            FEISHU_WEBHOOK_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=15,
+        )
+        print(f"  飞书响应: {resp.status_code} {resp.text[:200]}")
+        if resp.status_code == 200:
+            print("✅ 飞书推送成功")
+        else:
+            print(f"⚠️ 飞书推送异常: HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"❌ 飞书推送失败: {str(e)}")
+
+
 if __name__ == "__main__":
     result = collect_all()
     save_result(result)
+    post_to_feishu(result)
