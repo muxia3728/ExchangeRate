@@ -1,9 +1,9 @@
 """
 每日汇率采集脚本
 数据源：
-  中间价 - 中国外汇交易中心 (chinamoney.com.cn)
-  在岸CNY - Investing.com（主） / Yahoo Finance（备）
-  离岸CNH - Investing.com（主） / Yahoo Finance（备）
+  中间价 - 中国外汇交易中心 CcprHisNew API
+  在岸CNY - Investing.com 历史数据表格收盘价（主） / Yahoo Finance（备）
+  离岸CNH - Investing.com 历史数据表格收盘价（主） / Yahoo Finance（备）
 """
 
 import requests
@@ -18,13 +18,12 @@ from datetime import datetime, timedelta, timezone
 #  配置
 # ============================================================
 
-HEADERS = {
+HEADERS_COMMON = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/122.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
 }
 
@@ -48,60 +47,64 @@ def validate_rate(rate):
 # ============================================================
 
 def fetch_mid_rate():
+    """
+    API 地址：CcprHisNew
+    返回格式：records[0].values[0] = "6.9088"
+    """
     print("[中间价] 正在从外汇交易中心获取...")
     errors = []
+    date = today_str()
 
-    # 方式1：API接口
     try:
-        url = "https://www.chinamoney.com.cn/ags/ms/cm-u-bk-ccpr/CcprHis498New"
-        params = {"startDate": today_str(), "endDate": today_str(), "currency": "USD/CNY"}
-        resp = requests.get(url, params=params, headers=HEADERS, timeout=15)
+        url = "https://www.chinamoney.com.cn/ags/ms/cm-u-bk-ccpr/CcprHisNew"
+        params = {
+            "startDate": date,
+            "endDate": date,
+            "currency": "USD/CNY",
+        }
+        resp = requests.get(url, params=params, headers=HEADERS_COMMON, timeout=15)
+
         if resp.status_code == 200:
             data = resp.json()
             records = data.get("records", [])
-            if records:
-                rate = float(records[0].get("values", [0])[0])
+            if records and records[0].get("values"):
+                rate_str = records[0]["values"][0]
+                rate = float(rate_str)
                 if validate_rate(rate):
-                    print(f"[中间价] ✅ API获取成功: {rate}")
+                    print(f"[中间价] ✅ 获取成功: {rate}")
                     return rate, "外汇交易中心", None
-        errors.append("API返回无有效数据")
-    except Exception as e:
-        errors.append(f"API异常: {str(e)[:80]}")
+                else:
+                    errors.append(f"数据校验失败: {rate}")
+            else:
+                errors.append(f"当日({date})无数据,可能非工作日或未公布")
+        else:
+            errors.append(f"HTTP {resp.status_code}")
 
-    # 方式2：备用API
-    try:
-        url2 = "https://www.chinamoney.com.cn/ags/ms/cm-u-bk-ccpr/CcsVsCn"
-        resp2 = requests.get(url2, headers=HEADERS, timeout=15)
-        if resp2.status_code == 200:
-            data2 = resp2.json()
-            records2 = data2.get("records", [])
-            for record in records2:
-                if record.get("foreignCurrency") == "USD":
-                    rate = float(record.get("centralParity", 0))
-                    if validate_rate(rate):
-                        print(f"[中间价] ✅ 备用API获取成功: {rate}")
-                        return rate, "外汇交易中心", None
-        errors.append("备用API无有效数据")
     except Exception as e:
-        errors.append(f"备用API异常: {str(e)[:80]}")
+        errors.append(f"请求异常: {str(e)[:80]}")
 
-    print(f"[中间价] ❌ 全部失败: {errors}")
+    print(f"[中间价] ❌ 失败: {errors}")
     return None, None, f"中间价获取失败: {'; '.join(errors)}"
 
 
 # ============================================================
-#  数据源2：Investing.com - 在岸CNY / 离岸CNH
+#  数据源2：Investing.com - 历史数据表格收盘价
 # ============================================================
 
 def fetch_investing(pair_type):
+    """
+    从 Investing.com 历史数据页面获取表格第一行的收盘价
+    表头顺序：日期 | 收盘 | 开盘 | 高 | 低 | 交易量 | 涨跌幅
+    """
     label = "在岸CNY" if pair_type == "cny" else "离岸CNH"
     slug = "usd-cny" if pair_type == "cny" else "usd-cnh"
-    print(f"[{label}] 正在从 Investing.com 获取...")
+    print(f"[{label}] 正在从 Investing.com 历史数据获取...")
 
     try:
         url = f"https://cn.investing.com/currencies/{slug}-historical-data"
         custom_headers = {
-            **HEADERS,
+            **HEADERS_COMMON,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Referer": "https://cn.investing.com/",
         }
         resp = requests.get(url, headers=custom_headers, timeout=15)
@@ -111,41 +114,74 @@ def fetch_investing(pair_type):
 
         soup = BeautifulSoup(resp.text, "lxml")
 
-        # 方式1：查找历史数据表格
+        # 策略1：查找包含「收盘」或「日期」的表格
+        target_table = None
         tables = soup.find_all("table")
         for table in tables:
             header_text = table.get_text()
-            if "收盘" in header_text or "Close" in header_text:
-                rows = table.find_all("tr")
-                for row in rows[1:3]:
-                    cells = row.find_all("td")
-                    if len(cells) >= 2:
-                        close_text = cells[1].get_text(strip=True).replace(",", "")
-                        try:
-                            rate = float(close_text)
-                            if validate_rate(rate):
-                                print(f"[{label}] ✅ Investing获取成功: {rate}")
-                                return rate, "Investing.com", None
-                        except ValueError:
-                            continue
+            if ("收盘" in header_text or "Close" in header_text) and \
+               ("日期" in header_text or "Date" in header_text):
+                target_table = table
+                break
 
-        # 方式2：从页面脚本中提取
-        scripts = soup.find_all("script")
-        for script in scripts:
-            text = script.string or ""
-            patterns = [
-                r'"last(?:_close|Price|_price)"\s*:\s*"?([\d.]+)"?',
-                r'"close"\s*:\s*"?([\d.]+)"?',
-            ]
-            for pattern in patterns:
-                matches = re.findall(pattern, text, re.IGNORECASE)
-                if matches:
-                    rate = float(matches[0])
+        if target_table:
+            rows = target_table.find_all("tr")
+            # 跳过表头，取第一行数据（最新日期）
+            for row in rows[1:]:
+                cells = row.find_all("td")
+                if len(cells) >= 2:
+                    date_text = cells[0].get_text(strip=True)
+                    close_text = cells[1].get_text(strip=True).replace(",", "")
+                    try:
+                        rate = float(close_text)
+                        if validate_rate(rate):
+                            print(f"[{label}] ✅ Investing表格获取成功: {rate} (日期:{date_text})")
+                            return rate, f"Investing.com({date_text})", None
+                    except ValueError:
+                        continue
+
+        # 策略2：查找带有 data-test 属性的表格（Investing 新版页面）
+        table2 = soup.find("table", attrs={"data-test": True})
+        if table2:
+            rows = table2.find_all("tr")
+            for row in rows[1:]:
+                cells = row.find_all("td")
+                if len(cells) >= 2:
+                    date_text = cells[0].get_text(strip=True)
+                    close_text = cells[1].get_text(strip=True).replace(",", "")
+                    try:
+                        rate = float(close_text)
+                        if validate_rate(rate):
+                            print(f"[{label}] ✅ Investing表格(v2)获取成功: {rate} (日期:{date_text})")
+                            return rate, f"Investing.com({date_text})", None
+                    except ValueError:
+                        continue
+
+        # 策略3：遍历所有表格，找第一个包含合理汇率数据的
+        for table in tables:
+            rows = table.find_all("tr")
+            if len(rows) < 2:
+                continue
+            # 检查表头是否像历史数据表
+            header_cells = rows[0].find_all(["th", "td"])
+            header_texts = [c.get_text(strip=True) for c in header_cells]
+            header_joined = " ".join(header_texts)
+            if "日期" not in header_joined and "Date" not in header_joined:
+                continue
+            # 取第一行数据
+            data_cells = rows[1].find_all("td")
+            if len(data_cells) >= 2:
+                date_text = data_cells[0].get_text(strip=True)
+                close_text = data_cells[1].get_text(strip=True).replace(",", "")
+                try:
+                    rate = float(close_text)
                     if validate_rate(rate):
-                        print(f"[{label}] ✅ Investing(Script)获取成功: {rate}")
-                        return rate, "Investing.com", None
+                        print(f"[{label}] ✅ Investing表格(v3)获取成功: {rate} (日期:{date_text})")
+                        return rate, f"Investing.com({date_text})", None
+                except ValueError:
+                    continue
 
-        return None, None, f"Investing页面解析未找到{label}数据"
+        return None, None, f"Investing页面未找到{label}历史数据表格"
 
     except Exception as e:
         return None, None, f"Investing异常: {str(e)[:80]}"
@@ -156,6 +192,7 @@ def fetch_investing(pair_type):
 # ============================================================
 
 def fetch_yahoo(pair_type):
+    """从 Yahoo Finance 获取最近收盘价（备用源）"""
     label = "在岸CNY" if pair_type == "cny" else "离岸CNH"
     ticker = "CNY=X" if pair_type == "cny" else "CNH=X"
     print(f"[{label}] 正在从 Yahoo Finance 备用源获取...")
@@ -165,12 +202,16 @@ def fetch_yahoo(pair_type):
         hist = tk.history(period="5d")
 
         if hist.empty:
-            return None, None, f"Yahoo Finance返回空数据"
+            return None, None, "Yahoo Finance返回空数据"
 
-        rate = round(float(hist.iloc[-1]["Close"]), 4)
+        # 取最后一行（最新收盘）
+        last_row = hist.iloc[-1]
+        last_date = str(hist.index[-1].date())
+        rate = round(float(last_row["Close"]), 4)
+
         if validate_rate(rate):
-            print(f"[{label}] ✅ Yahoo获取成功: {rate}")
-            return rate, "Yahoo Finance", None
+            print(f"[{label}] ✅ Yahoo获取成功: {rate} (日期:{last_date})")
+            return rate, f"Yahoo Finance({last_date})", None
         else:
             return None, None, f"Yahoo数据校验失败: {rate}"
 
