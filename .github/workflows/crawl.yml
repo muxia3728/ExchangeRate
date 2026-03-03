@@ -2,12 +2,9 @@ name: 每日汇率采集
 
 on:
   schedule:
-    # 北京时间 09:20 = UTC 01:20（周一到周五）
     - cron: '20 1 * * 1-5'
-    # 北京时间 18:00 = UTC 10:00（周一到周五）
     - cron: '0 10 * * 1-5'
 
-  # 支持手动触发（测试用）
   workflow_dispatch:
 
 permissions:
@@ -30,6 +27,8 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: 运行汇率采集
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
         run: python src/crawl.py
 
       - name: 提交结果文件
