@@ -1,0 +1,11 @@
+{
+  "date": "2000-01-01",
+  "mid_rate": null,
+  "onshore_cny": null,
+  "offshore_cnh": null,
+  "source_mid": "",
+  "source_cny": "",
+  "source_cnh": "",
+  "errors": "初始化文件",
+  "updated_at": ""
+}
