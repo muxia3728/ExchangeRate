@@ -1,11 +1,11 @@
 {
-  "date": "2000-01-01",
+  "date": "2026-03-03",
   "mid_rate": null,
-  "onshore_cny": null,
-  "offshore_cnh": null,
+  "onshore_cny": 6.9002,
+  "offshore_cnh": 6.9099,
   "source_mid": "",
-  "source_cny": "",
-  "source_cnh": "",
-  "errors": "初始化文件",
-  "updated_at": ""
+  "source_cny": "Investing.com",
+  "source_cnh": "Investing.com",
+  "errors": "中间价获取失败: API返回无有效数据; 备用API无有效数据",
+  "updated_at": "2026-03-03 21:49:23"
 }
