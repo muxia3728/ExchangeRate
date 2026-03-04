@@ -109,36 +109,49 @@ def fetch_investing(pair_type):
 
         html = resp.text
 
-        # 策略1：从 historicalDataStore 中提取（最可靠）
+        # 从页面源码中提取 historicalDataStore 的 data 数组
+        # 找到第一条记录（最新日期）
+        # 精确提取 last_close 字段
+
+        # 提取整个 data 数组内容
         pattern = r'"historicalData"\s*:\s*\{"data"\s*:\s*\[(.*?)\]\s*\}'
         match = re.search(pattern, html, re.DOTALL)
 
         if match:
             data_str = match.group(1)
 
-            # 提取第一条记录的 last_close 和 rowDate
-            close_pattern = r'"rowDate"\s*:\s*"([^"]+)".*?"last_close"\s*:\s*"([\d.]+)"'
-            close_match = re.search(close_pattern, data_str, re.DOTALL)
+            # 找到第一个 { } 对象（最新一天的数据）
+            first_obj_pattern = r'\{(.*?)\}'
+            first_obj_match = re.search(first_obj_pattern, data_str, re.DOTALL)
 
-            if close_match:
-                date_text = close_match.group(1)
-                rate = float(close_match.group(2))
-                if validate_rate(rate):
-                    print(f"[{label}] ✅ Investing(historicalData)获取成功: {rate} (日期:{date_text})")
-                    return rate, f"Investing.com({date_text})", None
+            if first_obj_match:
+                obj_str = first_obj_match.group(1)
+                print(f"[{label}] 调试 - 第一条记录内容片段: {obj_str[:300]}")
 
-            # 备用：提取 last_closeRaw
-            raw_pattern = r'"rowDate"\s*:\s*"([^"]+)".*?"last_closeRaw"\s*:\s*([\d.]+)'
-            raw_match = re.search(raw_pattern, data_str, re.DOTALL)
+                # 精确提取 rowDate
+                date_match = re.search(r'"rowDate"\s*:\s*"([^"]+)"', obj_str)
+                date_text = date_match.group(1) if date_match else "未知日期"
 
-            if raw_match:
-                date_text = raw_match.group(1)
-                rate = round(float(raw_match.group(2)), 4)
-                if validate_rate(rate):
-                    print(f"[{label}] ✅ Investing(closeRaw)获取成功: {rate} (日期:{date_text})")
-                    return rate, f"Investing.com({date_text})", None
+                # 精确提取 last_close（字符串格式的收盘价）
+                close_match = re.search(r'"last_close"\s*:\s*"([\d.]+)"', obj_str)
 
-        # 策略2：查找 HTML 表格（兜底）
+                if close_match:
+                    rate = float(close_match.group(1))
+                    if validate_rate(rate):
+                        print(f"[{label}] ✅ Investing获取成功: {rate} (日期:{date_text})")
+                        return rate, f"Investing.com({date_text})", None
+                    else:
+                        print(f"[{label}] 校验失败: {rate}")
+
+                # 如果 last_close 没找到，试 last_closeRaw
+                raw_match = re.search(r'"last_closeRaw"\s*:\s*([\d.]+)', obj_str)
+                if raw_match:
+                    rate = round(float(raw_match.group(1)), 4)
+                    if validate_rate(rate):
+                        print(f"[{label}] ✅ Investing(Raw)获取成功: {rate} (日期:{date_text})")
+                        return rate, f"Investing.com({date_text})", None
+
+        # 如果 historicalDataStore 没找到，尝试表格
         soup = BeautifulSoup(html, "lxml")
         tables = soup.find_all("table")
         for table in tables:
@@ -163,8 +176,7 @@ def fetch_investing(pair_type):
 
     except Exception as e:
         return None, None, f"Investing异常: {str(e)[:80]}"
-
-
+      
 # ============================================================
 #  数据源3（备用）：Yahoo Finance
 # ============================================================
