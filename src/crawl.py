@@ -90,6 +90,7 @@ def fetch_mid_rate():
 # ============================================================
 
 def fetch_investing(pair_type):
+    """从 Investing.com 页面源码中的 historicalDataStore 提取收盘价"""
     label = "在岸CNY" if pair_type == "cny" else "离岸CNH"
     slug = "usd-cny" if pair_type == "cny" else "usd-cnh"
     print(f"[{label}] 正在从 Investing.com 获取...")
@@ -106,69 +107,59 @@ def fetch_investing(pair_type):
         if resp.status_code != 200:
             return None, None, f"Investing HTTP {resp.status_code}"
 
-        soup = BeautifulSoup(resp.text, "lxml")
+        html = resp.text
 
-        target_table = None
+        # 策略1：从 historicalDataStore 中提取（最可靠）
+        pattern = r'"historicalData"\s*:\s*\{"data"\s*:\s*\[(.*?)\]\s*\}'
+        match = re.search(pattern, html, re.DOTALL)
+
+        if match:
+            data_str = match.group(1)
+
+            # 提取第一条记录的 last_close 和 rowDate
+            close_pattern = r'"rowDate"\s*:\s*"([^"]+)".*?"last_close"\s*:\s*"([\d.]+)"'
+            close_match = re.search(close_pattern, data_str, re.DOTALL)
+
+            if close_match:
+                date_text = close_match.group(1)
+                rate = float(close_match.group(2))
+                if validate_rate(rate):
+                    print(f"[{label}] ✅ Investing(historicalData)获取成功: {rate} (日期:{date_text})")
+                    return rate, f"Investing.com({date_text})", None
+
+            # 备用：提取 last_closeRaw
+            raw_pattern = r'"rowDate"\s*:\s*"([^"]+)".*?"last_closeRaw"\s*:\s*([\d.]+)'
+            raw_match = re.search(raw_pattern, data_str, re.DOTALL)
+
+            if raw_match:
+                date_text = raw_match.group(1)
+                rate = round(float(raw_match.group(2)), 4)
+                if validate_rate(rate):
+                    print(f"[{label}] ✅ Investing(closeRaw)获取成功: {rate} (日期:{date_text})")
+                    return rate, f"Investing.com({date_text})", None
+
+        # 策略2：查找 HTML 表格（兜底）
+        soup = BeautifulSoup(html, "lxml")
         tables = soup.find_all("table")
         for table in tables:
             header_text = table.get_text()
             if ("收盘" in header_text or "Close" in header_text) and \
                ("日期" in header_text or "Date" in header_text):
-                target_table = table
-                break
+                rows = table.find_all("tr")
+                for row in rows[1:]:
+                    cells = row.find_all("td")
+                    if len(cells) >= 2:
+                        date_text = cells[0].get_text(strip=True)
+                        close_text = cells[1].get_text(strip=True).replace(",", "")
+                        try:
+                            rate = float(close_text)
+                            if validate_rate(rate):
+                                print(f"[{label}] ✅ Investing(表格)获取成功: {rate} (日期:{date_text})")
+                                return rate, f"Investing.com({date_text})", None
+                        except ValueError:
+                            continue
 
-        if target_table:
-            rows = target_table.find_all("tr")
-            for row in rows[1:]:
-                cells = row.find_all("td")
-                if len(cells) >= 2:
-                    date_text = cells[0].get_text(strip=True)
-                    close_text = cells[1].get_text(strip=True).replace(",", "")
-                    try:
-                        rate = float(close_text)
-                        if validate_rate(rate):
-                            print(f"[{label}] ✅ Investing获取成功: {rate} (日期:{date_text})")
-                            return rate, f"Investing.com({date_text})", None
-                    except ValueError:
-                        continue
-
-        table2 = soup.find("table", attrs={"data-test": True})
-        if table2:
-            rows = table2.find_all("tr")
-            for row in rows[1:]:
-                cells = row.find_all("td")
-                if len(cells) >= 2:
-                    date_text = cells[0].get_text(strip=True)
-                    close_text = cells[1].get_text(strip=True).replace(",", "")
-                    try:
-                        rate = float(close_text)
-                        if validate_rate(rate):
-                            print(f"[{label}] ✅ Investing(v2)获取成功: {rate}")
-                            return rate, f"Investing.com({date_text})", None
-                    except ValueError:
-                        continue
-
-        for table in tables:
-            rows = table.find_all("tr")
-            if len(rows) < 2:
-                continue
-            header_cells = rows[0].find_all(["th", "td"])
-            header_joined = " ".join([c.get_text(strip=True) for c in header_cells])
-            if "日期" not in header_joined and "Date" not in header_joined:
-                continue
-            data_cells = rows[1].find_all("td")
-            if len(data_cells) >= 2:
-                date_text = data_cells[0].get_text(strip=True)
-                close_text = data_cells[1].get_text(strip=True).replace(",", "")
-                try:
-                    rate = float(close_text)
-                    if validate_rate(rate):
-                        print(f"[{label}] ✅ Investing(v3)获取成功: {rate}")
-                        return rate, f"Investing.com({date_text})", None
-                except ValueError:
-                    continue
-
-        return None, None, f"Investing页面未找到{label}历史数据表格"
+        return None, None, f"Investing页面未找到{label}数据"
 
     except Exception as e:
         return None, None, f"Investing异常: {str(e)[:80]}"
