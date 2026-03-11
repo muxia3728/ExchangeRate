@@ -1,11 +1,11 @@
 {
   "date": "2026-03-11",
-  "mid_rate": 6.8917,
-  "onshore_cny": 6.8682,
-  "offshore_cnh": 6.865,
-  "source_mid": "外汇交易中心",
+  "mid_rate": null,
+  "onshore_cny": 6.8722,
+  "offshore_cnh": 6.8742,
+  "source_mid": "",
   "source_cny": "Investing.com(2026年3月11日)",
   "source_cnh": "Investing.com(2026年3月11日)",
-  "errors": "",
-  "updated_at": "2026-03-11 11:54:16"
+  "errors": "中间价获取失败: 请求异常: HTTPSConnectionPool(host='www.chinamoney.com.cn', port=443): Read timed out. (re",
+  "updated_at": "2026-03-11 18:24:14"
 }
