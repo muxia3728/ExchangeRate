@@ -1,11 +1,11 @@
 {
   "date": "2026-03-27",
   "mid_rate": 6.9141,
-  "onshore_cny": 6.9134,
-  "offshore_cnh": 6.9173,
+  "onshore_cny": null,
+  "offshore_cnh": 6.919,
   "source_mid": "外汇交易中心",
-  "source_cny": "Investing.com(2026年3月27日)",
+  "source_cny": "",
   "source_cnh": "Investing.com(2026年3月27日)",
-  "errors": "",
-  "updated_at": "2026-03-27 10:05:22"
+  "errors": "在岸CNY: Investing HTTP 503 -> Yahoo Finance返回空数据",
+  "updated_at": "2026-03-27 12:18:37"
 }
