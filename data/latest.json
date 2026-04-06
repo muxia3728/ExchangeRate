@@ -7,5 +7,5 @@
   "source_cny": "",
   "source_cnh": "",
   "errors": "中间价获取失败: 当日(2026-04-06)无数据,可能非工作日或未公布 | 在岸CNY: Investing HTTP 403 -> Yahoo Finance返回空数据 | 离岸CNH: Investing HTTP 403 -> Yahoo Finance返回空数据",
-  "updated_at": "2026-04-06 10:05:21"
+  "updated_at": "2026-04-06 12:30:16"
 }
