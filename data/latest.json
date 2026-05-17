@@ -1,11 +1,11 @@
 {
-  "date": "2026-05-16",
+  "date": "2026-05-17",
   "mid_rate": null,
   "onshore_cny": 6.8099,
   "offshore_cnh": 6.8139,
   "source_mid": "",
   "source_cny": "Investing.com(2026年5月15日)",
   "source_cnh": "Investing.com(2026年5月15日)",
-  "errors": "中间价获取失败: 当日(2026-05-16)无数据,可能非工作日或未公布",
-  "updated_at": "2026-05-16 10:05:23"
+  "errors": "中间价获取失败: 当日(2026-05-17)无数据,可能非工作日或未公布",
+  "updated_at": "2026-05-17 10:05:22"
 }
