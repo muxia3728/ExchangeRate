@@ -1,11 +1,11 @@
 {
   "date": "2026-06-17",
-  "mid_rate": 6.8096,
-  "onshore_cny": 6.7567,
-  "offshore_cnh": 6.7555,
-  "source_mid": "外汇交易中心",
+  "mid_rate": null,
+  "onshore_cny": 6.7595,
+  "offshore_cnh": 6.7598,
+  "source_mid": "",
   "source_cny": "Investing.com(2026年6月17日)",
   "source_cnh": "Investing.com(2026年6月17日)",
-  "errors": "",
-  "updated_at": "2026-06-17 14:40:44"
+  "errors": "中间价获取失败: HTTP 403",
+  "updated_at": "2026-06-17 21:03:06"
 }
