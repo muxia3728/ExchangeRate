@@ -1,11 +1,11 @@
 {
-  "date": "2026-07-17",
-  "mid_rate": 6.7934,
+  "date": "2026-07-20",
+  "mid_rate": 6.7948,
   "onshore_cny": null,
   "offshore_cnh": null,
   "source_mid": "外汇交易中心",
   "source_cny": "",
   "source_cnh": "",
   "errors": "在岸CNY: Investing HTTP 403 -> Yahoo Finance返回空数据 | 离岸CNH: Investing HTTP 403 -> Yahoo Finance返回空数据",
-  "updated_at": "2026-07-17 19:09:12"
+  "updated_at": "2026-07-20 13:09:33"
 }
